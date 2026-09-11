@@ -70,7 +70,7 @@ server.tool(
 
 server.tool(
   "redact_text",
-  "Redact likely sensitive patterns from text (IBAN, cards, emails, tokens, etc.). Heuristic only.",
+  "Redact likely sensitive patterns from outbound/MCP-bound text (IBAN, cards, emails, tokens, etc.). Heuristic output DLP only — not for scrubbing local prompts.",
   {
     text: z.string().describe("Text to redact"),
     skip: z
@@ -93,19 +93,19 @@ server.tool(
 
 server.tool(
   "ask_local",
-  "Ask the local Ollama model. By default appends a no-echo system hint and redacts the answer before return.",
+  "Ask the local Ollama model. Secrets/PII in the prompt are allowed (stay on Ollama). By default appends a no-echo system hint and redacts the *answer* before returning it over MCP (output-only DLP).",
   {
-    prompt: z.string().describe("User prompt / question"),
+    prompt: z.string().describe("User prompt / question (may include secrets/PII; processed only on local Ollama)"),
     system: z.string().optional().describe("Optional system instruction (merged with no-echo policy)"),
     model: z.string().optional().describe("Override default OLLAMA_MODEL"),
     redact: z
       .boolean()
       .optional()
-      .describe("Redact answer before return (default: env REDACT_OUTPUT, usually true)"),
+      .describe("Redact answer before MCP return (default: env REDACT_OUTPUT, usually true). Does not scrub the inbound prompt."),
     allow_echo: z
       .boolean()
       .optional()
-      .describe("If true, skip the built-in no-echo system add-on (not recommended)"),
+      .describe("If true, skip the built-in no-echo system add-on (weakens output DLP; not recommended)"),
   },
   async ({ prompt, system, model, redact, allow_echo }) => {
     const useModel = model || DEFAULT_MODEL;

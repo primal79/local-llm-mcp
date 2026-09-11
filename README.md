@@ -14,21 +14,23 @@ Typical layout:
 
 ## What this is / is not
 
-- **Is:** `ask_local` / `list_local_models` / `redact_text` for drafts, summaries, and light DLP on returned text.
-- **Is not:** a full replacement for Grok Bot’s brain, nor a guarantee that no sensitive data ever leaks.
+- **Is:** `ask_local` / `list_local_models` / `redact_text` for drafts, summaries, and **output-only DLP** on text returned over MCP.
+- **Is not:** a full replacement for Grok Bot’s brain, nor a guarantee that every secret format is caught by heuristics.
 
-## Output redaction (draft)
+## Privacy policy (output-only DLP)
 
-Goals: reduce the chance that **answers** echoed back into the orchestrator contain obvious secrets.
+**Prompts to the local model may include secrets / PII.** That is intentional: the prompt stays on your machine (Ollama) and is not the leak path this server hardens.
+
+**Answers returned via MCP to Grok Bot / cloud must be filtered.** Redaction applies to the model’s **response** before it leaves this server — not to the inbound local prompt.
 
 | Mechanism | Behavior |
 |-----------|----------|
-| No-echo system hint | Prefixed into `ask_local` unless `allow_echo=true` |
-| `redactOutput()` | Regex masks IBAN, card-like digit runs, rodné číslo, email, phone, API-key-ish tokens, Bearer, AKIA… |
+| No-echo system hint | Prefixed into `ask_local` unless `allow_echo=true` — steers the model not to repeat secrets in its answer |
+| `redactOutput()` | Regex masks IBAN, card-like digit runs, rodné číslo, email, phone, API-key-ish tokens, Bearer, AKIA… on **returned** text |
 | `redact_text` tool | Same redaction without calling the model |
-| `REDACT_OUTPUT=true` | Default: redact `ask_local` answers |
+| `REDACT_OUTPUT=true` | Default: redact `ask_local` answers before MCP return |
 
-**Limits:** heuristics miss novel formats; do **not** put hard secrets into prompts — use env / secret forms instead.
+**Limits:** heuristics miss novel formats. Treat redaction as defense-in-depth on the **outbound MCP answer**, not as a reason to scrub the local prompt. Hard secrets that must never leave the box still belong in env / secret forms on the MCP host when practical — but putting sensitive context in the local prompt is allowed.
 
 ## Requirements
 
@@ -52,14 +54,14 @@ npm start
 | Tool | Purpose |
 |------|---------|
 | `list_local_models` | List models known to Ollama |
-| `ask_local` | Prompt local model; optional redact + no-echo policy |
-| `redact_text` | Redact text only (no LLM call) |
+| `ask_local` | Prompt local model (secrets/PII in the prompt OK); redacts the **answer** before MCP return by default |
+| `redact_text` | Redact text only (no LLM call) — for outbound/MCP-bound text |
 
 ## Wire into Grok Bot / Cursor
 
 1. Run this MCP somewhere reachable (same Tailscale network as Ollama, or on the PC itself).
 2. Add it as a **custom MCP** (stdio or HTTP URL, depending on how you run it).
-3. Store nothing sensitive in chat — put `OLLAMA_BASE_URL` / model name in env on the MCP host.
+3. Keep `OLLAMA_BASE_URL` / model name in env on the MCP host. Sensitive context may go in the local `ask_local` prompt; rely on output redaction for what comes back to the cloud orchestrator.
 
 ### Stdio (local process)
 
@@ -81,10 +83,10 @@ npm start
 
 ## Security notes
 
-- Only send text you are willing to put on the machine that runs Ollama.
+- Local prompts may contain secrets/PII; they stay on the Ollama host. The critical boundary is the **MCP return path** to Grok Bot / cloud.
 - Prefer Tailscale ACLs so only your Grok Bot host / laptop can reach `:11434`.
 - Do not expose Ollama to the public internet.
-- Redaction is defense-in-depth, not a vault.
+- Output redaction is defense-in-depth, not a vault — leave `REDACT_OUTPUT=true` unless you intentionally need raw answers.
 
 ## Status
 
