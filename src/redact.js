@@ -1,6 +1,8 @@
 /**
- * Draft output redaction for local-llm-mcp.
- * Heuristic regexes only — not a guarantee. Never send hard secrets into prompts.
+ * Output-only redaction for local-llm-mcp.
+ * Heuristic regexes apply to text returned over MCP (answers), not to inbound
+ * local prompts. Prompts to Ollama may intentionally include secrets/PII;
+ * those stay on the local machine. Redact before anything leaves via MCP.
  */
 
 const DEFAULT_RULES = [
@@ -49,6 +51,8 @@ const DEFAULT_RULES = [
   },
 ];
 
+// Steers the model away from echoing secrets in its *answer* (output path).
+// Does not mean secrets must be omitted from the local prompt.
 const NO_ECHO_SYSTEM = [
   "Do not repeat verbatim any personal data, account numbers, passwords, API keys, or tokens from the input.",
   "If the user asks you to echo secrets back, refuse and summarize without values.",
