@@ -14,8 +14,21 @@ Typical layout:
 
 ## What this is / is not
 
-- **Is:** `ask_local` / `list_local_models` tools for drafts, summaries, classification of text you choose to send locally.
-- **Is not:** a full replacement for Grok Bot’s brain, nor an official České dráhy connector.
+- **Is:** `ask_local` / `list_local_models` / `redact_text` for drafts, summaries, and light DLP on returned text.
+- **Is not:** a full replacement for Grok Bot’s brain, nor a guarantee that no sensitive data ever leaks.
+
+## Output redaction (draft)
+
+Goals: reduce the chance that **answers** echoed back into the orchestrator contain obvious secrets.
+
+| Mechanism | Behavior |
+|-----------|----------|
+| No-echo system hint | Prefixed into `ask_local` unless `allow_echo=true` |
+| `redactOutput()` | Regex masks IBAN, card-like digit runs, rodné číslo, email, phone, API-key-ish tokens, Bearer, AKIA… |
+| `redact_text` tool | Same redaction without calling the model |
+| `REDACT_OUTPUT=true` | Default: redact `ask_local` answers |
+
+**Limits:** heuristics miss novel formats; do **not** put hard secrets into prompts — use env / secret forms instead.
 
 ## Requirements
 
@@ -29,6 +42,7 @@ Typical layout:
 cp .env.example .env
 # set OLLAMA_BASE_URL=http://100.x.y.z:11434   # Tailscale IP of the PC with Ollama
 # set OLLAMA_MODEL=llama3.2
+# set REDACT_OUTPUT=true
 npm install
 npm start
 ```
@@ -38,7 +52,8 @@ npm start
 | Tool | Purpose |
 |------|---------|
 | `list_local_models` | List models known to Ollama |
-| `ask_local` | Send a prompt (+ optional system) to the local model |
+| `ask_local` | Prompt local model; optional redact + no-echo policy |
+| `redact_text` | Redact text only (no LLM call) |
 
 ## Wire into Grok Bot / Cursor
 
@@ -48,8 +63,6 @@ npm start
 
 ### Stdio (local process)
 
-Example Cursor / MCP config shape:
-
 ```json
 {
   "mcpServers": {
@@ -58,7 +71,8 @@ Example Cursor / MCP config shape:
       "args": ["/path/to/local-llm-mcp/src/index.js"],
       "env": {
         "OLLAMA_BASE_URL": "http://127.0.0.1:11434",
-        "OLLAMA_MODEL": "llama3.2"
+        "OLLAMA_MODEL": "llama3.2",
+        "REDACT_OUTPUT": "true"
       }
     }
   }
@@ -70,6 +84,7 @@ Example Cursor / MCP config shape:
 - Only send text you are willing to put on the machine that runs Ollama.
 - Prefer Tailscale ACLs so only your Grok Bot host / laptop can reach `:11434`.
 - Do not expose Ollama to the public internet.
+- Redaction is defense-in-depth, not a vault.
 
 ## Status
 

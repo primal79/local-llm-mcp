@@ -6,10 +6,12 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
+import { redactOutput, defaultNoEchoSystem } from "./redact.js";
 
 const BASE = (process.env.OLLAMA_BASE_URL || "http://127.0.0.1:11434").replace(/\/$/, "");
 const DEFAULT_MODEL = process.env.OLLAMA_MODEL || "llama3.2";
 const TIMEOUT_MS = Number(process.env.OLLAMA_TIMEOUT_MS || 120000);
+const REDACT_DEFAULT = (process.env.REDACT_OUTPUT || "true").toLowerCase() !== "false";
 
 async function ollamaFetch(path, { method = "GET", body } = {}) {
   const ctrl = new AbortController();
@@ -41,7 +43,7 @@ async function ollamaFetch(path, { method = "GET", body } = {}) {
 
 const server = new McpServer({
   name: "local-llm-mcp",
-  version: "0.1.0",
+  version: "0.2.0",
 });
 
 server.tool(
@@ -67,20 +69,54 @@ server.tool(
 );
 
 server.tool(
+  "redact_text",
+  "Redact likely sensitive patterns from text (IBAN, cards, emails, tokens, etc.). Heuristic only.",
+  {
+    text: z.string().describe("Text to redact"),
+    skip: z
+      .array(z.string())
+      .optional()
+      .describe("Rule ids to skip, e.g. email, phone_eu, card"),
+  },
+  async ({ text, skip }) => {
+    const { text: redacted, matches } = redactOutput(text, { skip });
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({ redacted, match_count: matches.length, matches }, null, 2),
+        },
+      ],
+    };
+  }
+);
+
+server.tool(
   "ask_local",
-  "Ask the local Ollama model a question. Use for drafts/summaries you want to keep on the local machine path.",
+  "Ask the local Ollama model. By default appends a no-echo system hint and redacts the answer before return.",
   {
     prompt: z.string().describe("User prompt / question"),
-    system: z.string().optional().describe("Optional system instruction"),
+    system: z.string().optional().describe("Optional system instruction (merged with no-echo policy)"),
     model: z.string().optional().describe("Override default OLLAMA_MODEL"),
+    redact: z
+      .boolean()
+      .optional()
+      .describe("Redact answer before return (default: env REDACT_OUTPUT, usually true)"),
+    allow_echo: z
+      .boolean()
+      .optional()
+      .describe("If true, skip the built-in no-echo system add-on (not recommended)"),
   },
-  async ({ prompt, system, model }) => {
+  async ({ prompt, system, model, redact, allow_echo }) => {
     const useModel = model || DEFAULT_MODEL;
+    const doRedact = redact ?? REDACT_DEFAULT;
     const messages = [];
-    if (system) messages.push({ role: "system", content: system });
+    const sysParts = [];
+    if (!allow_echo) sysParts.push(defaultNoEchoSystem());
+    if (system) sysParts.push(system);
+    if (sysParts.length) messages.push({ role: "system", content: sysParts.join("\n\n") });
     messages.push({ role: "user", content: prompt });
 
-    // Prefer native /api/chat; fall back messaging shape if needed.
     const data = await ollamaFetch("/api/chat", {
       method: "POST",
       body: {
@@ -90,7 +126,14 @@ server.tool(
       },
     });
 
-    const answer = data?.message?.content ?? JSON.stringify(data);
+    let answer = data?.message?.content ?? JSON.stringify(data);
+    let redaction = null;
+    if (doRedact) {
+      const r = redactOutput(answer);
+      answer = r.text;
+      redaction = { match_count: r.matches.length, matches: r.matches };
+    }
+
     return {
       content: [
         {
@@ -99,6 +142,8 @@ server.tool(
             {
               model: useModel,
               base: BASE,
+              redacted: doRedact,
+              redaction,
               answer,
             },
             null,

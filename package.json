@@ -1,8 +1,8 @@
 {
   "name": "local-llm-mcp",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": false,
-  "description": "Draft MCP server: ask a local Ollama model (Tailscale-friendly side-channel)",
+  "description": "Draft MCP server: ask a local Ollama model (Tailscale-friendly side-channel) with output redaction",
   "type": "module",
   "bin": {
     "local-llm-mcp": "./src/index.js"
